@@ -1,0 +1,53 @@
+cmake_minimum_required(VERSION 3.16)
+project(smart_car_engine VERSION 1.0.0 LANGUAGES CXX)
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+include(FetchContent)
+
+cmake_policy(SET CMP0135 NEW)
+
+# ── spdlog (common/Logger) ──
+find_package(spdlog QUIET)
+if(NOT spdlog_FOUND)
+    message(STATUS "spdlog not found, fetching...")
+    FetchContent_Declare(spdlog
+        URL https://github.com/gabime/spdlog/archive/refs/tags/v1.12.0.zip
+    )
+    FetchContent_MakeAvailable(spdlog)
+endif()
+
+# ── nlohmann/json (car_ai) ──
+find_package(nlohmann_json QUIET)
+if(NOT nlohmann_json_FOUND)
+    message(STATUS "nlohmann_json not found, fetching...")
+    FetchContent_Declare(nlohmann_json
+        URL https://github.com/nlohmann/json/archive/refs/tags/v3.11.3.zip
+    )
+    FetchContent_MakeAvailable(nlohmann_json)
+endif()
+
+add_subdirectory(common)
+add_subdirectory(car_core)
+add_subdirectory(actuator_srv)
+add_subdirectory(tools)
+
+find_package(Qt5 QUIET COMPONENTS Widgets Core)
+if(Qt5_FOUND)
+    add_subdirectory(car_dashboard)
+else()
+    message(STATUS "Qt5 not found — skipping car_dashboard")
+endif()
+
+option(BUILD_TESTS "Build unit tests" ON)
+if(BUILD_TESTS)
+    enable_testing()
+
+    FetchContent_Declare(googletest
+        URL https://github.com/google/googletest/archive/refs/tags/v1.14.0.zip
+    )
+    FetchContent_MakeAvailable(googletest)
+
+    add_subdirectory(tests)
+endif()

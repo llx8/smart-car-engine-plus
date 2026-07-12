@@ -1,0 +1,2 @@
+add_executable(actuator_srv main.cpp)
+target_link_libraries(actuator_srv PRIVATE car_common)
