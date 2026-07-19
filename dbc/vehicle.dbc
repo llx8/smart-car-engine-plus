@@ -28,30 +28,30 @@ BS_:
 
 BU_: can_sim car_core
 
-BO_ 256 Speed: 4 can_sim
- SG_ Speed_kmh : 0|32@0- (1,0) [0|260] "km/h" car_core
+BO_ 256 Speed: 2 can_sim
+ SG_ Speed_kmh : 0|16@0+ (0.01,0) [0|260] "km/h" car_core
 
-BO_ 257 EngineRpm: 4 can_sim
- SG_ EngineRpm : 0|32@0- (1,0) [0|8000] "rpm" car_core
+BO_ 257 EngineRpm: 2 can_sim
+ SG_ EngineRpm : 0|16@0+ (1,0) [0|8000] "rpm" car_core
 
-BO_ 258 WaterOilTemp: 8 can_sim
- SG_ WaterTemp : 0|32@0- (1,0) [0|150] "degC" car_core
- SG_ OilTemp : 32|32@0- (1,0) [0|150] "degC" car_core
+BO_ 258 WaterOilTemp: 4 can_sim
+ SG_ WaterTemp : 0|16@0+ (0.1,0) [0|150] "degC" car_core
+ SG_ OilTemp : 16|16@0+ (0.1,0) [0|150] "degC" car_core
 
-BO_ 259 FuelBattery: 8 can_sim
- SG_ FuelPercent : 0|32@0- (1,0) [0|100] "%" car_core
- SG_ BatteryVoltage : 32|32@0- (1,0) [8|16] "V" car_core
+BO_ 259 FuelBattery: 4 can_sim
+ SG_ FuelPercent : 0|16@0+ (0.1,0) [0|100] "%" car_core
+ SG_ BatteryVoltage : 16|16@0+ (0.01,0) [8|16] "V" car_core
 
 BO_ 260 GearStatus: 3 can_sim
- SG_ Gear : 0|8@0- (1,0) [0|3] "" car_core
- SG_ HandBrake : 8|8@0- (1,0) [0|1] "" car_core
- SG_ LockStatus : 16|8@0- (1,0) [0|1] "" car_core
+ SG_ Gear : 0|8@0+ (1,0) [0|3] "" car_core
+ SG_ HandBrake : 8|8@0+ (1,0) [0|1] "" car_core
+ SG_ LockStatus : 16|8@0+ (1,0) [0|1] "" car_core
 
-CM_ "本项目 CAN 帧参考定义。float 字段传输原始 IEEE 754 二进制（大端序），DBC 格式无法直接描述 float，信号定义中使用 (1,0) 因子表示该字段为原始 32 位值，实际解码时需按 float 解释";
-CM_ BO_ 256 "车速 (km/h)，IEEE 754 float 大端序";
-CM_ BO_ 257 "发动机转速 (rpm)，int32 大端序";
-CM_ BO_ 258 "水温 + 油温 (°C)，各 IEEE 754 float 大端序";
-CM_ BO_ 259 "燃油百分比 + 电池电压 (V)，各 IEEE 754 float 大端序";
+CM_ "本项目 CAN 帧参考定义。采用 uint16 + 因子偏移量编码（大端序无符号），物理量 = raw * factor";
+CM_ BO_ 256 "车速 (km/h)，uint16 + factor=0.01";
+CM_ BO_ 257 "发动机转速 (rpm)，uint16 + factor=1";
+CM_ BO_ 258 "水温 + 油温 (°C)，各 uint16 + factor=0.1";
+CM_ BO_ 259 "燃油百分比 + 电池电压 (V)，uint16 + factor=0.1/0.01";
 CM_ BO_ 260 "档位(0=P/1=R/2=N/3=D) + 手刹(0=OFF/1=ON) + 中控锁(0=Unlock/1=Lock)";
 
 BA_DEF_ BO_ "GenMsgCycleTime" INT 0 10000;
