@@ -13,3 +13,7 @@ add_test(NAME test_shm_layout COMMAND test_shm_layout)
 add_executable(test_dtc_engine test_dtc_engine.cpp)
 target_link_libraries(test_dtc_engine PRIVATE car_common GTest::gtest_main)
 add_test(NAME test_dtc_engine COMMAND test_dtc_engine)
+
+add_executable(test_seqlock test_seqlock.cpp)
+target_link_libraries(test_seqlock PRIVATE car_common GTest::gtest_main)
+add_test(NAME test_seqlock COMMAND test_seqlock)
