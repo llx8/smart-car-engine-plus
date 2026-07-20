@@ -4,6 +4,11 @@
 #include <unistd.h>
 #include <iostream>
 
+uint32_t ShmReader::readIndex() const {
+    if (!header_) return 0;
+    return header_->read_index.load(std::memory_order_acquire);
+}
+
 ShmReader::ShmReader(int shmid, int eventfd_fd, QObject* parent)
     : QObject(parent), eventfd_fd_(eventfd_fd)
 {
@@ -14,11 +19,12 @@ ShmReader::ShmReader(int shmid, int eventfd_fd, QObject* parent)
         return;
     }
 
-    // ── 步骤 2：64 字节对齐，按布局取出 header 和 shm_block ──
-    // 与 car_core/main.cpp 写端对齐逻辑完全一致
+    // ── 步骤 2：64 字节对齐，按布局取出 header 和双缓冲 ──
     uintptr_t aligned = (reinterpret_cast<uintptr_t>(raw_shm_) + 63) & ~static_cast<uintptr_t>(63);
-    header_    = reinterpret_cast<ShmHeader*>(aligned);
-    shm_block_ = reinterpret_cast<ShmBlock*>(aligned + sizeof(ShmHeader));
+    header_     = reinterpret_cast<ShmHeader*>(aligned);
+    shm_buf_[0] = reinterpret_cast<ShmBlock*>(aligned + sizeof(ShmHeader));
+    shm_buf_[1] = reinterpret_cast<ShmBlock*>(
+        aligned + sizeof(ShmHeader) + sizeof(ShmBlock));
 
     // ── 步骤 3：验证 magic（只读，不需要原子操作） ──
     if (header_->magic != 0xCAFE0001) {
@@ -60,34 +66,27 @@ void ShmReader::onDataReady(int /*fd*/)
     // ── 步骤 1：消费 eventfd 事件 ⚠️ 必须第一步，否则 QSocketNotifier 死循环 ──
     uint64_t cnt = 0;
     if (read(eventfd_fd_, &cnt, sizeof(cnt)) != sizeof(cnt)) {
-        return; // eventfd 读失败，异常情况，跳过本轮
+        return;
     }
 
-    // ── 步骤 2：Seqlock 读端协议 ──
+    // ── 步骤 2：Ping-Pong 读端协议 ──
     bool success = false;
     for (int retry = 0; retry < kMaxRetry; ++retry) {
-        uint32_t v1 = header_->version.load(std::memory_order_acquire);
-
-        // 写端正持有锁（version 为奇数），自旋等待下一轮
-        if (v1 & 1) continue;
-
-        // 拷贝整个数据块到本地副本
-        std::memcpy(local_copy_, shm_block_, sizeof(ShmBlock));
-
-        uint32_t v2 = header_->version.load(std::memory_order_acquire);
-
-        // version 未变化 → 拷贝期间没有并发写入 → 数据一致
-        if (v1 == v2) {
+        // 读活跃索引
+        uint32_t idx = header_->read_index.load(std::memory_order_acquire);
+        // 拷贝活跃缓冲区到本地
+        std::memcpy(local_copy_, shm_buf_[idx], sizeof(ShmBlock));
+        // recheck：索引未变 → 写端未在拷贝期间切换 → 数据一致
+        uint32_t idx2 = header_->read_index.load(std::memory_order_acquire);
+        if (idx == idx2) {
             success = true;
             break;
         }
-        // v1 != v2 → 写端在 memcpy 期间完成了写入，数据可能撕裂，重试
+        // idx 变了 → 写端切换到了新 buf，重试
     }
 
     if (!success) {
-        // 降级：重试全部失败，仍使用最后一次拷贝的数据，但打印告警
-        // 20Hz CAN 刷新下，下次 eventfd 触发即可读到一致版本
-        std::cerr << "[ShmReader] Seqlock read failed after " << kMaxRetry
+        std::cerr << "[ShmReader] Ping-Pong read failed after " << kMaxRetry
                   << " retries, using last copy" << std::endl;
     }
 
