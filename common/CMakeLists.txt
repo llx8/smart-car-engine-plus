@@ -3,6 +3,7 @@ add_library(car_common STATIC
     ConfigManager.cpp
     DtcEngine.cpp
     Logger.cpp
+    ModuleServer.cpp
 )
 
 target_include_directories(car_common PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})

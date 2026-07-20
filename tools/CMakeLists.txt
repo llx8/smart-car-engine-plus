@@ -3,9 +3,10 @@ find_package(Threads REQUIRED)
 add_executable(can_sim can_sim.cpp)
 target_link_libraries(can_sim PRIVATE car_common Threads::Threads)
 
-# ── car_ctl / car_ai 暂未开发，M1.5 / M2.4 阶段再开启 ──
-# add_executable(car_ctl car_ctl.cpp)
-# target_link_libraries(car_ctl PRIVATE car_common)
+add_executable(car_ctl car_ctl.cpp)
+target_link_libraries(car_ctl PRIVATE car_common)
+
+# ── car_ai 暂未开发，M2.4 阶段再开启 ──
 #
 # find_package(CURL QUIET)
 # if(CURL_FOUND)
