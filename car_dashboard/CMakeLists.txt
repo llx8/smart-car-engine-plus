@@ -8,6 +8,7 @@ add_executable(car_dashboard
     FaultLamp.cpp
     DoorPanel.cpp
     ShmReader.cpp
+    DtcListWidget.hpp
 )
 
 target_link_libraries(car_dashboard PRIVATE
