@@ -1,6 +1,8 @@
 #include "CanFrame.hpp"
 #include <cstdio>      // printf
 #include <cstring>     // memset
+#include <cstdlib>     // atoi
+#include <cmath>       // sinf
 #include <unistd.h>    // usleep, close
 #include <sys/socket.h>// socket, bind
 #include <net/if.h>    // ifreq
@@ -48,18 +50,27 @@ static int create_can_socket(const char* ifname) {
 }
 
 // 主函数
-
-int main() {
+// 用法: can_sim [fps]
+//   默认 20 Hz (50ms 间隔) — 模拟正常工况
+//   500 Hz (2ms 间隔)    — 压测模式,验证 car_core 不丢帧
+int main(int argc, char* argv[]) {
     // 需要预先配置 vcan0
     // 运行前执行: sudo ip link add dev vcan0 type vcan && sudo ip link set up vcan0
+
+    int fps = 20;
+    if (argc >= 2) {
+        fps = atoi(argv[1]);
+        if (fps <= 0) fps = 20;
+    }
+    const int interval_us = 1000000 / fps;
+    printf("can_sim running on %s @ %d Hz (interval=%d us)...\n",
+           kCanIfName, fps, interval_us);
 
     int sock = create_can_socket(kCanIfName);
     if (sock < 0) {
         fprintf(stderr, "Failed to create CAN socket. Make sure vcan0 is set up.\n");
         return 1;
     }
-
-    printf("can_sim running on %s...\n", kCanIfName);
 
     // 行驶状态
     float  speed     = 0.0f;       // 当前车速
@@ -98,10 +109,36 @@ int main() {
             if (speed < 0.0f) speed = 0.0f;
         }
 
+        // ── 故障注入：30 秒一个周期,4 个故障各 5 秒,后 10 秒正常 ──
+        // 0-4s: 发动机(P0115 水温过高)    5-9s: ABS(C0035 高速高转速)
+        // 10-14s: 气囊(B0020 超速)       15-19s: 电池(P0560 电压低)
+        // 20-29s: 全部正常
+        int phase = (frame_cnt / 20) % 30;    // 20Hz → 每秒 20 帧
+        bool fault_engine = (phase < 5);
+        bool fault_abs    = (phase >= 5  && phase < 10);
+        bool fault_airbag = (phase >= 10 && phase < 15);
+        bool fault_batt   = (phase >= 15 && phase < 20);
+
         // 计算联动数据
         int32_t rpm = static_cast<int32_t>(speed * 30.0f + kIdleRpm);
-        // 车速 80 → rpm = 80*30 + 800 = 3200
-        // 怠速     → rpm = 800
+
+        // 故障相位 override: ABS 需要高速 + 高转速
+        if (fault_abs)    { speed = 60.0f; rpm = 4500; }
+        // 气囊: 超速近碰撞
+        if (fault_airbag) { speed = 75.0f; }
+
+        // 水温: 怠速 78°C, 高速 ~96°C, 随车速线性温升
+        float water = 78.0f + speed * 0.22f;
+        // 油温: 跟水温联动 + 几度
+        float oil   = water + 7.0f;
+        // 燃油: 每秒 -0.5% 缓慢下降(演示用,150s 跑空一次循环)
+        float fuel  = 80.0f - (frame_cnt * 0.025f);
+        if (fuel < 5.0f) fuel = 80.0f;
+        // 电瓶: 12.4V + 0.15V 呼吸抖动
+        float batt  = 12.4f + 0.15f * sinf(frame_cnt * 0.1f);
+
+        if (fault_engine) { water = 118.0f; oil = 138.0f; } // 水温>110 → P0115
+        if (fault_batt)   { batt  = 9.5f; }                 // 电压<11  → P0560
 
         // ── 发送高频帧（每帧都发） ──
         struct can_frame frame;
@@ -118,14 +155,14 @@ int main() {
 
         // ── 发送中低频帧 ──
         if (frame_cnt % kWaterOilInterval == 0) {
-            frame = encode_water_oil_frame(85.0f, 92.0f);
+            frame = encode_water_oil_frame(water, oil);
             if (write(sock, &frame, sizeof(frame)) != sizeof(frame)) {
                 perror("write water_oil");
             }
         }
 
         if (frame_cnt % kSlowInterval == 0) {
-            frame = encode_fuel_battery_frame(65.0f, 12.4f);
+            frame = encode_fuel_battery_frame(fuel, batt);
             if (write(sock, &frame, sizeof(frame)) != sizeof(frame)) {
                 perror("write fuel_battery");
             }
@@ -138,12 +175,19 @@ int main() {
 
         // ── 调试打印 ──
         if (frame_cnt % 20 == 0) {  // 每秒打印一次
-            printf("speed=%.0f km/h  rpm=%d  water=85°C  fuel=65%%  gear=D\n", speed, rpm);
+            const char* flt = fault_engine ? "P0115-发动机" :
+                              fault_abs    ? "C0035-ABS" :
+                              fault_airbag ? "B0020-气囊" :
+                              fault_batt   ? "P0560-电池" : "";
+            char tag[32]{};
+            if (flt[0]) std::snprintf(tag, sizeof(tag), "  [FLT: %s]", flt);
+            printf("speed=%.0f  rpm=%d  water=%.1fC  oil=%.1fC  fuel=%.1f%%  batt=%.2fV%s\n",
+                   speed, rpm, water, oil, fuel, batt, tag);
             fflush(stdout);
         }
 
         frame_cnt++;
-        usleep(50 * 1000);  // 50ms ≈ 20Hz
+        usleep(interval_us);
     }
 
     close(sock);

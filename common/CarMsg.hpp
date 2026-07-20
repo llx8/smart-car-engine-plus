@@ -14,7 +14,8 @@ enum class CmdType : uint8_t {
 
 enum class ModId : uint8_t {
     DOOR = 1,
-    AC   = 2
+    AC   = 2,
+    DTC  = 3
 };
 
 enum class ResultCode : uint8_t {
@@ -23,7 +24,8 @@ enum class ResultCode : uint8_t {
     UNKNOWN_CMD  = 0x02,
     UNKNOWN_MOD  = 0x03,
     UNKNOWN_ITEM = 0x04,
-    OUT_OF_RANGE = 0x05
+    OUT_OF_RANGE = 0x05,
+    SAFETY_BLOCK = 0x06  // 安全规则拦截
 };
 
 // ── 门控字段索引 ──
@@ -46,7 +48,13 @@ namespace ac_item {
     constexpr uint8_t kCount         = 4;
 }
 
-// ── 固定大小协议结构体（SOCK_SEQPACKET，保留消息边界） ──
+// ── DTC 字段索引 ──
+namespace dtc_item {
+    constexpr uint8_t kList   = 0; // GET_ALL: 获取活跃故障列表
+    constexpr uint8_t kClear  = 1; // WRITE=1: 清除所有故障
+}
+
+// ── 固定大小协议结构体 (SOCK_SEQPACKET, 保留消息边界) ──
 
 #pragma pack(push, 1)
 struct CarMsgReq {

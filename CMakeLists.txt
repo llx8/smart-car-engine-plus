@@ -25,17 +25,17 @@ if(NOT spdlog_FOUND)
     FetchContent_MakeAvailable(spdlog)
 endif()
 
-# nlohmann/json (car_ai) — car_ai 暂未开发，M2.4 阶段再开启 FetchContent
-# if(BUILD_TOOLS)
-#     find_package(nlohmann_json QUIET)
-#     if(NOT nlohmann_json_FOUND)
-#         message(STATUS "nlohmann_json not found, fetching for car_ai...")
-#         FetchContent_Declare(nlohmann_json
-#             URL https://github.com/nlohmann/json/archive/refs/tags/v3.11.3.zip
-#         )
-#         FetchContent_MakeAvailable(nlohmann_json)
-#     endif()
-# endif()
+# nlohmann/json (car_ai)
+if(BUILD_TOOLS)
+    find_package(nlohmann_json QUIET)
+    if(NOT nlohmann_json_FOUND)
+        message(STATUS "nlohmann_json not found, fetching for car_ai...")
+        FetchContent_Declare(nlohmann_json
+            URL https://github.com/nlohmann/json/archive/refs/tags/v3.11.3.zip
+        )
+        FetchContent_MakeAvailable(nlohmann_json)
+    endif()
+endif()
 
 add_subdirectory(common)
 
