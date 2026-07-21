@@ -4,10 +4,14 @@ add_executable(car_dashboard
     main.cpp
     SpeedGauge.cpp
     TachGauge.cpp
-    TempWidget.cpp
-    FaultLamp.cpp
-    DoorPanel.cpp
     ShmReader.cpp
+    TempWidget.cpp
+    TempWidget.hpp
+    FaultLamp.cpp
+    FaultLamp.hpp
+    DoorPanel.cpp
+    DoorPanel.hpp
+    DtcListWidget.cpp
     DtcListWidget.hpp
 )
 

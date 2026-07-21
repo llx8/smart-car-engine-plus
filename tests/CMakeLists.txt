@@ -1,3 +1,5 @@
+find_package(Threads REQUIRED)
+
 add_executable(test_can_frame test_can_frame.cpp)
 target_link_libraries(test_can_frame PRIVATE car_common GTest::gtest_main)
 add_test(NAME test_can_frame COMMAND test_can_frame)
@@ -15,5 +17,5 @@ target_link_libraries(test_dtc_engine PRIVATE car_common GTest::gtest_main)
 add_test(NAME test_dtc_engine COMMAND test_dtc_engine)
 
 add_executable(test_seqlock test_seqlock.cpp)
-target_link_libraries(test_seqlock PRIVATE car_common GTest::gtest_main)
+target_link_libraries(test_seqlock PRIVATE car_common GTest::gtest_main Threads::Threads)
 add_test(NAME test_seqlock COMMAND test_seqlock)

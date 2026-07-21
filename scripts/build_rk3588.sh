@@ -34,6 +34,5 @@ find "${BUILD_DIR}" -maxdepth 3 -type f -executable -name 'car_*' -o -name 'actu
 
 echo ""
 echo "部署到板子:"
-echo "  scp ${BUILD_DIR}/car_core/car_core root@192.168.0.103:/opt/smartcar/"
-echo "  scp ${BUILD_DIR}/car_dashboard/car_dashboard root@192.168.0.103:/opt/smartcar/"
-echo "  # ... 其他可执行文件类似"
+echo "  scripts/deploy_rk3588.sh  # 默认 ubuntu@192.168.0.102:/home/ubuntu/smartcar"
+echo "  或自定义: scripts/deploy_rk3588.sh 192.168.0.103 ubuntu /home/ubuntu/smartcar"

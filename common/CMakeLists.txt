@@ -2,7 +2,6 @@ add_library(car_common STATIC
     CanFrame.cpp
     ConfigManager.cpp
     DtcEngine.cpp
-    Logger.cpp
     ModuleServer.cpp
 )
 

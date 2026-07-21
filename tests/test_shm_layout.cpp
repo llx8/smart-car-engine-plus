@@ -4,7 +4,7 @@
 // ── 结构体大小检查 ──
 
 TEST(ShmLayoutTest, ShmHeaderSize) {
-    // ShmHeader: magic(8) + version(4) + _pad(5*4=20) = 32
+    // ShmHeader: magic(8) + version(4) + read_index(4) + _pad[4](16) = 32
     EXPECT_EQ(sizeof(ShmHeader), 32);
 }
 
