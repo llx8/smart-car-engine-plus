@@ -15,8 +15,13 @@ enum class CmdType : uint8_t {
 enum class ModId : uint8_t {
     DOOR = 1,
     AC   = 2,
-    DTC  = 3
+    DTC  = 3,
+    AI   = 4  // car_ai → car_core 通知 ai_status
 };
+
+namespace ai_item {
+    constexpr uint8_t kStatus = 0; // ai_status: 0=OK 1=网络不可用
+}
 
 enum class ResultCode : uint8_t {
     OK           = 0x00,

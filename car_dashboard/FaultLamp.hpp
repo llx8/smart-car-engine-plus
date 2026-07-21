@@ -44,10 +44,8 @@ protected:
 
         if (mode_ == 0 || !blinkOn_) {
             color = QColor(30, 120, 30); // 绿/灭
-        } else if (mode_ == 2) {
-            color = QColor(220, 180, 20); // 黄（慢闪警告）
         } else {
-            color = QColor(200, 30, 30); // 红（故障）
+            color = QColor(200, 30, 30); // 红（故障：常亮/慢闪/快闪统一用红）
         }
 
         p.setBrush(color);

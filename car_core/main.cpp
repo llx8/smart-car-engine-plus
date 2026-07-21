@@ -14,6 +14,8 @@
 #include <cstring>
 #include <iostream>
 #include <csignal>
+#include <cstdio>
+#include <sys/stat.h>
 #include "CanFrame.hpp"
 #include <ShmLayout.hpp>
 #include <CarMsg.hpp>
@@ -107,8 +109,7 @@ static void db_thread_func() {
     sqlite3_close(db);
 }
 
-// 同步 actuator_srv 的门控全量状态到 ShmBlock::door_mask
-// 让 dashboard 能看到 AI/CLI 真实开门动作
+// 同步 actuator_srv 门控状态。每次最多等 200ms
 static uint8_t queryDoorMask() {
     int fd = socket(AF_UNIX, SOCK_SEQPACKET, 0);
     if (fd < 0) return 0;
@@ -118,14 +119,14 @@ static uint8_t queryDoorMask() {
     if (connect(fd, reinterpret_cast<struct sockaddr*>(&a), sizeof(a)) < 0) {
         close(fd); return 0;
     }
+    struct timeval tv = {0, 200000};
+    setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
     auto req = makeReq(ModId::DOOR, CmdType::GET_ALL, 0);
     send(fd, &req, sizeof(req), MSG_NOSIGNAL);
     CarMsgResp resp{};
     recv(fd, &resp, sizeof(resp), 0);
     close(fd);
     if (resp.result != static_cast<uint8_t>(ResultCode::OK)) return 0;
-    // ShmBlock::door_mask bit0..4 分别对应: 左前/右前/左后/右后/后备箱
-    // actuator_srv door GET_ALL 返回 value[0..5] 对应 door_item::kWindowFL/FR/RL/RR/Trunk/Lock
     uint8_t mask = 0;
     for (int i = 0; i < 5 && i < door_item::kCount; ++i) {
         if (resp.value[i]) mask |= (1u << i);
@@ -240,12 +241,42 @@ static void handle_car_core_client(int client_fd) {
         return;
     }
 
+    // ── AI 状态通知 ──
+    if (static_cast<ModId>(req.mod_id) == ModId::AI) {
+        if (static_cast<CmdType>(req.cmd_type) == CmdType::WRITE
+            && req.item_id == ai_item::kStatus) {
+            int32_t st = req.value[0] ? 1 : 0;
+            if (g_shm_buf[0]) {
+                g_shm_buf[0]->ai_status = st;
+                if (st)
+                    std::strncpy(g_shm_buf[0]->ai_message,
+                                 "AI service unavailable",
+                                 sizeof(g_shm_buf[0]->ai_message) - 1);
+                else
+                    g_shm_buf[0]->ai_message[0] = '\0';
+            }
+            if (g_shm_buf[1]) {
+                g_shm_buf[1]->ai_status = st;
+                if (st)
+                    std::strncpy(g_shm_buf[1]->ai_message,
+                                 "AI service unavailable",
+                                 sizeof(g_shm_buf[1]->ai_message) - 1);
+                else
+                    g_shm_buf[1]->ai_message[0] = '\0';
+            }
+        }
+        auto resp = makeResp(ResultCode::OK);
+        send(client_fd, &resp, sizeof(resp), MSG_NOSIGNAL);
+        close(client_fd);
+        return;
+    }
+
     // ── 其他模块代理到 actuator_srv（含安全检查） ──
 
-    // 安全检查：行驶中 (speed > 5 km/h) 禁止操作车窗
+    // 安全检查：行驶中 (speed > 5 km/h) 禁止操作车窗/车门/后备箱(中控锁除外)
     if (static_cast<ModId>(req.mod_id) == ModId::DOOR
         && static_cast<CmdType>(req.cmd_type) == CmdType::WRITE
-        && req.item_id <= door_item::kWindowRR) {
+        && req.item_id < door_item::kLock) {  // 0..4 = FL/FR/RL/RR/Trunk
         // 从活跃缓冲区读取当前车速
         if (g_header && g_shm_buf[0]) {
             uint32_t active = g_header->read_index.load(
@@ -333,12 +364,19 @@ int main() {
         addr.sun_family = AF_UNIX;
         std::strncpy(addr.sun_path, kSockPath, sizeof(addr.sun_path) - 1);
         if (bind(g_listen_fd, reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr)) == 0) {
+            chmod(kSockPath, 0666);  // 允许非 root 用户 connect
             listen(g_listen_fd, 5);
             std::cout << "[car_core] listening on " << kSockPath << std::endl;
         } else {
             close(g_listen_fd);
             g_listen_fd = -1;
         }
+    }
+
+    // ── 写 shmid 到文件，供 start.sh 清理 ──
+    {
+        FILE* f = fopen("/tmp/car_core.shmid", "w");
+        if (f) { fprintf(f, "%d %d\n", g_shmid, g_qt_notify_fd); fclose(f); }
     }
 
     // 启动CAN接收线程
@@ -459,7 +497,7 @@ int main() {
                 }
             }
 
-// 2) ping actuator_srv,失败 3 次 → fork 重启
+            // 2) ping actuator_srv,失败 3 次 → fork 重启
             {
                 int ping_fd = socket(AF_UNIX, SOCK_SEQPACKET, 0);
                 if (ping_fd >= 0) {

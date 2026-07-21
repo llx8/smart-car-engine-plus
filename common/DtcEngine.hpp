@@ -94,7 +94,7 @@ private:
         bool confirmed = false;
         bool was_confirmed = false;   // 曾被确认过（用于驾驶循环跟踪）
         uint8_t fault_free_cycles = 0; // 连续无故障循环计数
-        bool (*check)(const struct ShmBlock&) = nullptr;
+        bool first_detected = false;   // 首次检测（0→1），用于记录冻结帧
     };
 
     std::vector<Monitor> monitors_;

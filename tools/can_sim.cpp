@@ -9,6 +9,8 @@
 #include <sys/ioctl.h> // ioctl
 #include <linux/can.h> // can_frame
 
+#include <chrono>     // steady_clock
+
 // 行驶模拟参数
 
 constexpr const char* kCanIfName = "vcan0";
@@ -113,7 +115,10 @@ int main(int argc, char* argv[]) {
         // 0-4s: 发动机(P0115 水温过高)    5-9s: ABS(C0035 高速高转速)
         // 10-14s: 气囊(B0020 超速)       15-19s: 电池(P0560 电压低)
         // 20-29s: 全部正常
-        int phase = (frame_cnt / 20) % 30;    // 20Hz → 每秒 20 帧
+        using clock = std::chrono::steady_clock;
+        auto now_sec = std::chrono::duration_cast<std::chrono::seconds>(
+            clock::now().time_since_epoch()).count();
+        int phase = static_cast<int>(now_sec % 30);    // wall-clock 秒，与 fps 解耦
         bool fault_engine = (phase < 5);
         bool fault_abs    = (phase >= 5  && phase < 10);
         bool fault_airbag = (phase >= 10 && phase < 15);

@@ -33,6 +33,5 @@ private:
 
     void createSocket();
     void handleAccept();
-    void handleClient(int client_fd);
     void cleanup();
 };

@@ -68,7 +68,11 @@ set +e   # car_core 崩溃时不应终止整个脚本,while 循环负责重启
             exit 1
         fi
         # 重拉 car_dashboard 前先清理残留共享内存
-        ipcrm -M 0x47574d4d 2>/dev/null || true
+        if [ -f /tmp/car_core.shmid ]; then
+            read SHMID _ < /tmp/car_core.shmid
+            ipcrm -m "$SHMID" 2>/dev/null || true
+            rm -f /tmp/car_core.shmid
+        fi
         rm -f /tmp/car_core.sock
     done
 ) &

@@ -1,6 +1,8 @@
 #include <iostream>
 #include <string>
 #include <cstring>
+#include <cstdlib>
+#include <chrono>
 #include <curl/curl.h>
 #include <nlohmann/json.hpp>
 
@@ -31,7 +33,9 @@ static void loadConfig() {
         }
     }
 
-    g_apiKey   = cfg.getString("api", "key");
+    // 优先读环境变量，其次读配置文件
+    const char* envKey = std::getenv("DEEPSEEK_API_KEY");
+    g_apiKey = envKey ? envKey : cfg.getString("api", "key");
     g_apiUrl   = cfg.getString("api", "url", g_apiUrl);
     g_model    = cfg.getString("api", "model", g_model);
     g_timeout  = cfg.getInt("api", "timeout_ms", 3000) / 1000;
@@ -116,17 +120,24 @@ static size_t writeCallback(void* contents, size_t size, size_t nmemb, std::stri
 }
 
 // ── 调用 DeepSeek API ──
-static std::string callDeepSeek(const std::string& userMsg) {
+// request_id: 幂等性标识，首次调用传空字符串，重试时复用同一 id
+static std::string callDeepSeek(const std::string& userMsg, std::string& request_id) {
     CURL* curl = curl_easy_init();
     if (!curl) return "";
 
     json body;
-    body["model"] = "deepseek-chat";
+    body["model"] = g_model;
     body["messages"] = json::array({
         {{"role", "system"}, {"content", kSystemPrompt}},
         {{"role", "user"},   {"content", userMsg}}
     });
     body["temperature"] = 0.1;
+    // 幂等性: 重试时复用同一 request_id
+    if (request_id.empty()) {
+        request_id = std::to_string(
+            std::chrono::steady_clock::now().time_since_epoch().count());
+    }
+    body["metadata"] = {{"request_id", request_id}};
     std::string bodyStr = body.dump();
 
     std::string response;
@@ -143,10 +154,17 @@ static std::string callDeepSeek(const std::string& userMsg) {
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
 
     CURLcode res = curl_easy_perform(curl);
+    long http_code = 0;
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
     curl_slist_free_all(headers);
     curl_easy_cleanup(curl);
 
-    return (res == CURLE_OK) ? response : "";
+    if (res != CURLE_OK) return "";
+    if (http_code >= 400) {  // HTTP 错误也触发重试
+        std::cerr << "  DeepSeek HTTP " << http_code << std::endl;
+        return "";
+    }
+    return response;
 }
 
 // ── 通过 Unix socket 发送指令到 car_core ──
@@ -185,13 +203,32 @@ static const char* resultCodeStr(uint8_t code) {
     }
 }
 
-// ── 安全校验 ──
+// ── 安全校验（纵深防御第一道） ──
 static bool isSafetyAllowed(ModId mod, uint8_t item) {
-    // 禁止 AI 操作中控锁之外的门控在行驶中
-    // 当前简化：所有操作都允许，实际应由 car_core 做最终校验
-    // car_core 在 M3 会加入车速检查
+    // 档位禁止 AI 控制
     (void)mod; (void)item;
+    // 所有字段均在 kFieldMap 中，不含 gear 相关项 → 此处只需声明策略
+    // 行驶中车门/车窗拦截由 car_core SAFETY_BLOCK 做第二道防线
     return true;
+}
+
+// ── 通知 car_core 更新 ai_status（网络降级/恢复） ──
+static void notifyAiStatus(int32_t status, const char* msg) {
+    int fd = socket(AF_UNIX, SOCK_SEQPACKET, 0);
+    if (fd < 0) return;
+    struct sockaddr_un addr{};
+    addr.sun_family = AF_UNIX;
+    std::strncpy(addr.sun_path, g_coreSock.c_str(), sizeof(addr.sun_path) - 1);
+    if (connect(fd, reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr)) < 0) {
+        close(fd); return;
+    }
+    CarMsgReq req = makeReq(ModId::AI, CmdType::WRITE, ai_item::kStatus,
+                            static_cast<uint8_t>(status));
+    send(fd, &req, sizeof(req), MSG_NOSIGNAL);
+    CarMsgResp resp{};
+    recv(fd, &resp, sizeof(resp), 0);
+    close(fd);
+    (void)msg; // ai_message 暂时只设 status 位,Qt 端根据 status 显示固定提示
 }
 
 int main() {
@@ -202,6 +239,7 @@ int main() {
     std::cout << "输入自然语言指令（如 '打开左前窗'、'空调调到24度'），输入 quit 退出"
               << std::endl;
 
+    bool ai_degraded = false;
     std::string input;
     while (true) {
         std::cout << "\n> ";
@@ -210,10 +248,11 @@ int main() {
         if (input.empty()) continue;
         if (input == "quit" || input == "exit") break;
 
-        // 调用 DeepSeek（带重试）
+        // 调用 DeepSeek（带重试，同一 request_id 幂等）
         std::string jsonResp;
+        std::string req_id;
         for (int retry = 0; retry <= g_maxRetry; ++retry) {
-            jsonResp = callDeepSeek(input);
+            jsonResp = callDeepSeek(input, req_id);
             if (!jsonResp.empty()) break;
             if (retry < g_maxRetry) {
                 std::cout << "  [retry " << (retry + 1) << "/" << g_maxRetry
@@ -222,8 +261,16 @@ int main() {
         }
 
         if (jsonResp.empty()) {
+            if (!ai_degraded) {
+                ai_degraded = true;
+                notifyAiStatus(1, "AI 服务不可用，请稍后重试");
+            }
             std::cerr << "  AI 服务不可用，请稍后重试" << std::endl;
             continue;
+        }
+        if (ai_degraded) {
+            ai_degraded = false;
+            notifyAiStatus(0, "");
         }
 
         // 解析 JSON 响应

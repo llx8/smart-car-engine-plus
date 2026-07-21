@@ -138,7 +138,7 @@ TEST_F(DtcEngineTest, FreezeFrameCapturedOnConfirm) {
     EXPECT_FLOAT_EQ(ff.oil_temp_c, 90.0f);
     EXPECT_FLOAT_EQ(ff.fuel_percent, 55.0f);
     EXPECT_FLOAT_EQ(ff.battery_voltage, 13.2f);
-    EXPECT_EQ(ff.timestamp_ms, 2000u);
+    EXPECT_EQ(ff.timestamp_ms, 0u);  // 首次检测时记录快照，非确认时
 }
 
 // ──────────────────────────────────────────────

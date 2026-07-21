@@ -7,11 +7,14 @@
 // ── ShmHeader：放在共享内存开头 ──
 // 必须自然对齐，严禁 #pragma pack(1) （ARM 上 atomic 对齐会崩）
 struct ShmHeader {
-    uint64_t                magic;       // 固定 0xCAFE_CAFE_CAFE_CAFE
-    std::atomic<uint32_t>   version;     // 保留向后兼容
-    std::atomic<uint32_t>   read_index;  // Ping-Pong: 读者该读哪个 buf (0 或 1)
+    uint64_t                magic;       // 固定 0xCAFE_0001（只读验证）
+    std::atomic<uint32_t>   version;     // 单调递增，供活跃性检测
+    std::atomic<uint32_t>   read_index;  // Ping-Pong: 读端该读哪个 buf (0 或 1)
     uint32_t                _pad[4];     // 补齐到 32 字节
 };
+static_assert(sizeof(ShmHeader) == 32, "ShmHeader must be 32 bytes");
+static_assert(alignof(ShmHeader) <= 8, "ShmHeader align <= 8");
+static_assert(std::atomic<uint32_t>::is_always_lock_free, "atomic<uint32_t> must be lock-free");
 
 // ── ShmBlock：车况数据块 ──
 struct ShmBlock {

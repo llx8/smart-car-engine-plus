@@ -44,6 +44,20 @@ void DtcEngine::update(const ShmBlock& data, uint64_t now_ms)
         }
 
         if (fault_now) {
+            // ── 首次检测（0→1）：记录冻结帧 ──
+            if (!m.first_detected) {
+                m.first_detected = true;
+                m.record.first_seen_ms = now_ms;
+                m.record.freeze.dtc_code       = m.record.code;
+                m.record.freeze.speed_kmh      = data.speed_kmh;
+                m.record.freeze.engine_rpm     = data.engine_rpm;
+                m.record.freeze.water_temp_c   = data.water_temp_c;
+                m.record.freeze.oil_temp_c     = data.oil_temp_c;
+                m.record.freeze.fuel_percent   = data.fuel_percent;
+                m.record.freeze.battery_voltage = data.battery_voltage;
+                m.record.freeze.timestamp_ms   = now_ms;
+            }
+
             // 故障复发 → 重置无故障循环计数
             if (m.was_confirmed && !m.confirmed) {
                 m.fault_free_cycles = 0;
@@ -61,19 +75,11 @@ void DtcEngine::update(const ShmBlock& data, uint64_t now_ms)
                 m.was_confirmed = true;
                 m.fault_free_cycles = 0;
                 m.record.confirmed_ms = now_ms;
-                m.record.first_seen_ms = m.timestamps.front();
                 m.record.active = true;
-
-                m.record.freeze.dtc_code       = m.record.code;
-                m.record.freeze.speed_kmh      = data.speed_kmh;
-                m.record.freeze.engine_rpm     = data.engine_rpm;
-                m.record.freeze.water_temp_c   = data.water_temp_c;
-                m.record.freeze.oil_temp_c     = data.oil_temp_c;
-                m.record.freeze.fuel_percent   = data.fuel_percent;
-                m.record.freeze.battery_voltage = data.battery_voltage;
-                m.record.freeze.timestamp_ms   = now_ms;
             }
         } else {
+            // 异常消退，重置首次检测标志（下次复发重新记录冻结帧）
+            m.first_detected = false;
             while (!m.timestamps.empty() &&
                    now_ms - m.timestamps.front() > kWindowMs) {
                 m.timestamps.pop_front();
@@ -105,6 +111,7 @@ void DtcEngine::markDrivingCycle()
         if (m.fault_free_cycles >= kClearCycles) {
             // 达到清除门槛，完全清除此故障
             m.was_confirmed = false;
+            m.first_detected = false;
             m.fault_free_cycles = 0;
             m.record.active = false;
         }
@@ -120,6 +127,7 @@ void DtcEngine::clearAll() {
         m.timestamps.clear();
         m.confirmed = false;
         m.was_confirmed = false;
+        m.first_detected = false;
         m.fault_free_cycles = 0;
         m.record.active = false;
     }

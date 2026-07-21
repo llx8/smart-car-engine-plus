@@ -16,6 +16,8 @@
 //   car_ctl ac get_all              — 获取空调全量状态
 //   car_ctl dtc list                — 列出当前活跃 DTC
 //   car_ctl dtc clear               — 清除所有 DTC
+//   car_ctl dtc freeze <idx>        — 查看冻结帧快照
+//   car_ctl fault inject <code>     — 注入故障（预留，M3 开发中）
 
 static int connectToServer() {
     int fd = socket(AF_UNIX, SOCK_SEQPACKET, 0);

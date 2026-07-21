@@ -7,11 +7,19 @@
 #include <unistd.h>
 #include <cstring>
 #include <iostream>
+#include <csignal>
+
+namespace {
+    volatile std::sig_atomic_t g_server_running = 1;
+    void handle_signal(int) { g_server_running = 0; }
+}
 
 ModuleServer::ModuleServer(const char* socket_path)
     : sock_path_(socket_path)
 {
     createSocket();
+    std::signal(SIGINT, handle_signal);
+    std::signal(SIGTERM, handle_signal);
 }
 
 ModuleServer::~ModuleServer()
@@ -68,13 +76,11 @@ void ModuleServer::run()
     constexpr int kMaxEvents = 16;
     struct epoll_event events[kMaxEvents];
 
-    while (true) {
-        int nfds = epoll_wait(epoll_fd_, events, kMaxEvents, -1);
+    while (g_server_running) {
+        int nfds = epoll_wait(epoll_fd_, events, kMaxEvents, 1000);
         for (int i = 0; i < nfds; ++i) {
             if (events[i].data.fd == listen_fd_) {
                 handleAccept();
-            } else {
-                handleClient(events[i].data.fd);
             }
         }
     }
@@ -105,12 +111,6 @@ void ModuleServer::handleAccept()
     CarMsgResp resp = onRequest(req);
     sendResponse(client_fd, resp);
     close(client_fd);
-}
-
-void ModuleServer::handleClient(int /*client_fd*/)
-{
-    // epoll 监听的是 listen_fd_，客户端 fd 不在 epoll 中
-    // 每个客户端 accept → recv → send → close 一次性处理，不走 epoll 事件循环
 }
 
 bool ModuleServer::sendResponse(int client_fd, const CarMsgResp& resp)
