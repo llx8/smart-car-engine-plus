@@ -15,16 +15,6 @@ option(BUILD_TOOLS        "Build tools (can_sim / car_ctl)"    ON)
 option(BUILD_DASHBOARD    "Build Qt5 dashboard"                ON)
 option(BUILD_TESTS        "Build unit tests"                   ON)
 
-# spdlog (common/Logger)
-find_package(spdlog QUIET)
-if(NOT spdlog_FOUND)
-    message(STATUS "spdlog not found, fetching...")
-    FetchContent_Declare(spdlog
-        URL https://github.com/gabime/spdlog/archive/refs/tags/v1.12.0.zip
-    )
-    FetchContent_MakeAvailable(spdlog)
-endif()
-
 # nlohmann/json (car_ai)
 if(BUILD_TOOLS)
     find_package(nlohmann_json QUIET)

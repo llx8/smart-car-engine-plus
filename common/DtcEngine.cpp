@@ -59,10 +59,12 @@ void DtcEngine::update(const ShmBlock& data, uint64_t now_ms)
             }
 
             // 故障复发 → 重置无故障循环计数
-            if (m.was_confirmed && !m.confirmed) {
+            if (m.was_confirmed && m.fault_free_cycles > 0) {
                 m.fault_free_cycles = 0;
             }
 
+            // 故障当前正在触发 → active=true (反映"当前是否仍在触发")
+            m.record.active = true;
             m.timestamps.push_back(now_ms);
 
             while (!m.timestamps.empty() &&
@@ -75,7 +77,6 @@ void DtcEngine::update(const ShmBlock& data, uint64_t now_ms)
                 m.was_confirmed = true;
                 m.fault_free_cycles = 0;
                 m.record.confirmed_ms = now_ms;
-                m.record.active = true;
             }
         } else {
             // 异常消退，重置首次检测标志（下次复发重新记录冻结帧）
@@ -84,17 +85,19 @@ void DtcEngine::update(const ShmBlock& data, uint64_t now_ms)
                    now_ms - m.timestamps.front() > kWindowMs) {
                 m.timestamps.pop_front();
             }
-            // 窗口归零 → 故障消退
-            if (m.timestamps.empty() && m.confirmed) {
-                m.confirmed = false;
+            // 窗口归零 → 故障当前不再触发,但仍保留为已确认历史(等待 markDrivingCycle 清除)
+            if (m.timestamps.empty()) {
                 m.record.active = false;
-                // was_confirmed 保持 true，等待驾驶循环计数
             }
         }
 
-        if (m.confirmed) {
+        // 故障灯:仅在 已确认 + 当前仍在触发 时点亮 (消退即灭灯,符合真实车 MIL 行为)
+        if (m.confirmed && m.record.active) {
             fault_lamp_mask_ |= (1u << m.lamp_bit);
             blink_modes_[m.lamp_bit] = m.blink_mode;
+        }
+        // activeDtcs: 所有已确认但未被驾驶循环清除的故障 (含已消退的)
+        if (m.confirmed) {
             confirmed_.push_back(m.record);
         }
     }
@@ -103,18 +106,26 @@ void DtcEngine::update(const ShmBlock& data, uint64_t now_ms)
 void DtcEngine::markDrivingCycle()
 {
     for (auto& m : monitors_) {
-        if (!m.was_confirmed || m.confirmed)
-            continue;  // 从未确认过 或 仍活跃 → 不处理
+        // 跳过:从未确认过 / 当前仍在触发
+        if (!m.was_confirmed || m.record.active)
+            continue;
 
-        // 已消退的故障：累计无故障循环
+        // 已确认且当前已消退 → 累计无故障循环
         m.fault_free_cycles++;
         if (m.fault_free_cycles >= kClearCycles) {
-            // 达到清除门槛，完全清除此故障
+            // 达到清除门槛,完全清除此故障 (下次复发将走全新确认流程)
+            m.confirmed = false;
             m.was_confirmed = false;
             m.first_detected = false;
             m.fault_free_cycles = 0;
             m.record.active = false;
         }
+    }
+
+    // 同步刷新 confirmed_ (activeDtcs 反映清除后的状态,无需等下次 update)
+    confirmed_.clear();
+    for (const auto& m : monitors_) {
+        if (m.confirmed) confirmed_.push_back(m.record);
     }
 }
 

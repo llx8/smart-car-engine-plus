@@ -37,8 +37,10 @@ DtcListWidget::DtcListWidget(QWidget* parent) : QWidget(parent) {
     table_->setHorizontalHeaderLabels({"故障码", "严重度", "状态", "描述"});
     table_->horizontalHeader()->setStretchLastSection(true);
     table_->verticalHeader()->hide();
+    table_->verticalHeader()->setDefaultSectionSize(28);  // 行高 28px,避免字被横向滚动条盖住
     table_->setSelectionBehavior(QAbstractItemView::SelectRows);
     table_->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    table_->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);  // 最后一列 stretch,不需要横向滚动
     table_->setStyleSheet(
         "QTableWidget { background: #1a1a1a; color: white; gridline-color: #333;"
         "border: 1px solid #444; font-size: 12px; }"

@@ -1,4 +1,11 @@
-add_executable(car_core main.cpp)
+add_executable(car_core
+    main.cpp
+    CanReceiver.cpp
+    CoreServer.cpp
+    DbLogger.cpp
+    Watchdog.cpp
+    BusinessRules.cpp
+)
 target_link_libraries(car_core PRIVATE car_common)
 
 find_package(Threads REQUIRED)

@@ -92,7 +92,7 @@ TEST_F(DtcEngineTest, AnomaliesSpreadBeyondWindowNotConfirmed) {
 }
 
 // ──────────────────────────────────────────────
-// 测试5：确认后消退 — 窗口内无水 → 自动清除
+// 测试5：确认后消退 — 窗口内无水 → 故障灯灭,但仍在列表里(设计:CONFIRMED 状态保留)
 // ──────────────────────────────────────────────
 TEST_F(DtcEngineTest, FaultRecoveryAfterWindowEmpty) {
     reg(dtc_codes::P0115, DtcCategory::P, 2, 0, 2);
@@ -104,12 +104,13 @@ TEST_F(DtcEngineTest, FaultRecoveryAfterWindowEmpty) {
     }
     ASSERT_NE(engine_->faultLampMask(), 0u);
 
-    // 不再注入异常，等窗口过期
+    // 不再注入异常,等窗口过期 → 故障灯灭,但 activeDtcs 仍保留
     data_.water_temp_c = 85.0f;
     engine_->update(data_, 3000 + 11000);  // 所有 timestamps 过期
 
-    EXPECT_EQ(engine_->faultLampMask(), 0u);
-    EXPECT_TRUE(engine_->activeDtcs().empty());
+    EXPECT_EQ(engine_->faultLampMask(), 0u);          // 故障灯灭
+    EXPECT_EQ(engine_->activeDtcs().size(), 1u);      // 但故障仍在已确认列表
+    EXPECT_FALSE(engine_->activeDtcs()[0].active);    // 标记为当前未触发
 }
 
 // ──────────────────────────────────────────────
@@ -270,19 +271,24 @@ TEST_F(DtcEngineTest, DrivingCycleAutoClear) {
     }
     ASSERT_EQ(engine_->activeDtcs().size(), 1u);
 
-    // 故障消退: 一次 update 跳到 25 秒,所有 timestamps (t=0,1,2s) 都出 10s 窗口
+    // 故障消退: 跳到 25 秒,所有 timestamps (t=0,1,2s) 都出 10s 窗口
     data_.water_temp_c = 85.0f;
     engine_->update(data_, 25000);
-    EXPECT_EQ(engine_->activeDtcs().size(), 0u);  // 消退后无活跃
+    EXPECT_EQ(engine_->activeDtcs().size(), 1u);   // 消退后仍保留在列表
+    EXPECT_FALSE(engine_->activeDtcs()[0].active);
+    EXPECT_EQ(engine_->faultLampMask(), 0u);         // 但故障灯已灭
 
     // markDrivingCycle 1 次: fault_free_cycles=1,还不清除
     engine_->markDrivingCycle();
+    EXPECT_EQ(engine_->activeDtcs().size(), 1u);
     // markDrivingCycle 2 次: fault_free_cycles=2,还不清除
     engine_->markDrivingCycle();
-    // markDrivingCycle 3 次: fault_free_cycles=3,kClearCycles=3 → 清除
+    EXPECT_EQ(engine_->activeDtcs().size(), 1u);
+    // markDrivingCycle 3 次: fault_free_cycles=3,kClearCycles=3 → 完全清除
     engine_->markDrivingCycle();
+    EXPECT_EQ(engine_->activeDtcs().size(), 0u);   // 驾驶循环清除后从列表消失
 
-    // 再次触发同样故障: 应被视为新故障(active=false → 通过 update 逻辑重新确认)
+    // 再次触发同样故障: 应被视为新故障(全新确认流程)
     data_.water_temp_c = 118.0f;
     for (int i = 0; i < 3; ++i) {
         engine_->update(data_, 10000 + i * 1000);
